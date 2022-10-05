@@ -9,6 +9,12 @@ Blockchain Reputation Management System in E-commerce
 4. Product purchase
 5. Buyer reviews
 6. Rewards
+
+This marketplace currently is set up for only 1 seller store with multiple products, and multiple possible buyers.
+Things to add:
+- Reputation score storage
+- Reputation score calculations and updates
+
 */
 
 
@@ -25,7 +31,8 @@ contract Marketplace {
 
     // Events 
     event Upload( 
-        address indexed productAddress, 
+        uint256 productID,
+        string productName, 
         address indexed sellerAddress
     ); 
     event ProductSale( 
@@ -37,12 +44,13 @@ contract Marketplace {
     event Reward( 
         address indexed buyerAddress, 
         address indexed sellerAddress, 
-        address indexed commentAddress, 
+        uint256 reviewID, 
         uint256 price,
         uint256 timestamp
     ); 
     event BuyerReview(
-        address indexed productAddress,
+        uint256 productID,
+        uint256 reviewID,
         address indexed buyerAddress,
         uint256 rating,
         uint256 timestamp
@@ -50,36 +58,55 @@ contract Marketplace {
     event Transfer( 
 
     ); 
+
     
     // Structs
     // Define struct for Product (contains product info) 
     struct Product { 
         // Defining variables 
-        address productAddress; 
+        // address productID; 
+        uint256 productID;
+        string productName;
         address sellerAddress; 
         uint256 price; 
         bool valid;
+        uint256 countReviews;
         // Mappings 
-        mapping(address => bool) Buyers; 
-        mapping(address => string[]) BuyerReviews; 
+        // Buyer address => bool
+        mapping(address => bool) buyers; 
+        // Buyer address => reviewID
+        mapping(address => Review) buyerReviews; 
+        // Product[] products; // NEW TODO
+        // mapping(address => Review) reviews;
     } 
+
+    Product[] public allProducts;
+    // mapping()
+
+    
+    // struct Reviews {
+    //     mapping()
+    // }
+
 
     // Define struct for Reviews 
     struct Review {
         // Defining variables
         uint256 reviewID;
-        address productAddress;
+        uint256 productID;
         address sellerAddress;
         address buyerAddress;
         //string reviewText;
         uint256 rating;
+        bool valid;
     }
+
 
     // Define struct for Sale 
     struct Sale {
         // Defining variables
         address saleAddress;
-        address productAddress;
+        address productID;
         address sellerAddress;
         address buyerAddress;
         uint256 price;
@@ -91,8 +118,8 @@ contract Marketplace {
     // Tracks seller's number of sales
     mapping(address => uint256) public numOfSales;
 
-    // Mapping productAddress to Product 
-    mapping(address => Product) productMapping; 
+    // // Mapping productID to Product 
+    // mapping(address => Product) allProducts; 
 
     // Mapping sellerAddress to the amount of ETH they are able to withdraw
     mapping(address => uint256) sellerRevenue;
@@ -101,7 +128,8 @@ contract Marketplace {
     mapping(address => uint256) buyerRewardAmounts;
 
     // Arrays
-    Product[] public allProducts; 
+    // Product[] public allProducts; 
+    // Unused so far... review!
     Review[] public allReviews;
     Sale[] public allSales;
 
@@ -117,99 +145,117 @@ contract Marketplace {
 
     // Functions
     // Upload Product - called by seller
-    function uploadProduct(address productAddress, uint256 price) 
+    function uploadProduct(uint256 productID, string memory productName, uint256 price) 
     public 
     returns (bool success) 
     {
-        // Verify whether the product information has been uploaded or not. 
-        require(!productMapping[productAddress].valid, "Product already uploaded before!"); 
+        // Verify whether the product information has been uploaded or not. (Pass if productID not valid)
+        require(!allProducts[productID].valid, "Product with this productID already uploaded before!"); 
 
-        // Initialize product instance (productAddress, sellerAddress, price) 
-        Product storage p = Product(productAddress, msg.sender, price, true); 
-        
-        // Update mapping info 
-        productMapping[productAddress] = p;
+        // Initialize product instance 
+        // cur numProducts will also be the productID of the next newProduct (zero indexed)
+        uint256 numProducts = allProducts.length;
+        // adds one ele to array allProducts
+        allProducts.push(); 
+        // Create a newProduct in storage, note that numProducts is the new productID
+        // This way of initialisation is necessary to avoid (nested) mapping error in Solidity
+        Product storage newProduct = allProducts[numProducts];
+        // Product storage newProduct = allProducts[productID];
 
-        // Add to marketplace's allProducts 
-        allProducts.push(p); 
+        // numProducts++;
+        newProduct.productID = numProducts; 
+        newProduct.productName = productName;
+        newProduct.sellerAddress = msg.sender;
+        newProduct.price = price;
+        newProduct.valid = true;
+        newProduct.countReviews = 0;
+
+        // Mappings (None during initialisation)
 
         // If success, publish to UI 
-        emit Upload(productAddress, msg.sender);
+        emit Upload(numProducts, productName, msg.sender);
         return true;
     }
 
     // Purchase of product - called by buyer 
-    function purchaseProduct(address productAddress) 
+    function purchaseProduct(uint256 productID) 
     public 
     payable 
     returns (bool success) 
     { 
         // Verify whether product is in the system 
-        require(productMapping[productAddress].valid, "Product does not exist!"); 
+        require(allProducts[productID].valid, "Product does not exist!"); 
 
-        // Check if buyer's balance is not 0 
+        // Check if buyer's balance is not 0 (the value provided in this function call msg)
         require(msg.value > 0, "Ethers cannot be zero!"); 
 
         // Identify product instance 
-        Product memory p = productMapping[productAddress]; 
+        Product storage productToBuy = allProducts[productID]; 
 
         // Checks if buyer's payment is equal to product price
-        require(msg.value == p.price, "Please send exact amount!"); 
+        require(msg.value == productToBuy.price, "Please send exact amount!"); 
 
         // Perform the sale 
         // Give seller the credits 
-        sellerRevenue[p.sellerAddress] += msg.value;
+        sellerRevenue[productToBuy.sellerAddress] += msg.value;
         // Update allSales
         // allSales
 
         // Update mapping 
-        p.Buyers[msg.sender] = true; // buyer address is now registered as a buyer of this product 
+        productToBuy.buyers[msg.sender] = true; // mapping buyer address to true or false depending on whether the buyer has bought this product before
 
         // Publish Purchase event to UI 
-        emit ProductSale(msg.sender, sellerAddress, p.price, block.timestamp); 
+        emit ProductSale(msg.sender, sellerAddress, productToBuy.price, block.timestamp); 
         return true; 
     }
     
     // Review of product - called by buyer
-    function buyerReview(string memory buyerRating, address productAddress) 
+    function buyerReview(uint256 buyerRating, uint256 productID) 
     public 
     returns (bool success) 
     { 
         // Verify whether product is in the system 
-        require(productMapping[productAddress].valid, "Product does not exist!");  
+        require(allProducts[productID].valid, "Product does not exist!");  
 
         // Identify product instance 
-        Product memory p = productMapping[productAddress]; 
+        Product storage productToReview = allProducts[productID]; 
 
         // Check if buyer actually bought the product 
-        require(p.Buyers[msg.sender] == true, "No records of buyer buying this product or leaving review."); 
+        require(productToReview.buyers[msg.sender] == true, "No records of buyer buying this product or leaving review."); 
+
+        // Create the Reviewww named productReview
+        productToReview.countReviews++;
+        uint256 reviewID = productToReview.countReviews;
+        Review memory productReview = Review(reviewID, productID, productToReview.sellerAddress, msg.sender, buyerRating, true);
 
         // Update mappings 
-        p.BuyerReviews[msg.sender] = buyerRating;
+        productToReview.buyerReviews[msg.sender] = productReview;
 
         // Publish Review event to UI 
-        emit BuyerReview(productAddress, msg.sender, buyerRating, block.timestamp);
-        return true; 
+        emit BuyerReview(productID, reviewID, msg.sender, buyerRating, block.timestamp);
+        return true;
+
     }
 
     // Seller rewards buyers for leaving review - called by seller
-    function reward(address productAddress, address buyerAddress, uint256 reviewID, uint256 rewardAmount) 
+    function reward(uint256 productID, address buyerAddress, uint256 reviewID) 
     public 
     payable 
     returns (bool success) 
     { 
         // Verify whether product is in the system 
-        require(productMapping[productAddress].valid, "Product does not exist!"); 
+        require(allProducts[productID].valid, "Product does not exist!"); 
 
         // Identify product instance 
-        Product memory p = productMapping[productAddress]; 
+        Product storage product = allProducts[productID]; 
 
-        // Identify product instance via its product ID, via its IPFS address p = productMapping[productAddress] 
+        // Identify product instance via its product ID, via its IPFS address p = allProducts[productID] 
         // Check if buyer has actually bought the product 
-        require(p.Buyers[buyerAddress] == true, "No records of buyer buying this product."); 
+        require(product.buyers[buyerAddress] == true, "No records of buyer buying this product."); 
 
+        // TODO START FROM HERE!
         // Check if buyer left a review 
-        require(p.BuyerReviews[buyerAddress][reviewID] >= 0, "No records of buyer leaving review."); // no record denoted by -1
+        require(product.buyerReviews[buyerAddress].valid, "No records of buyer leaving review."); 
 
         // Future TODO - Seller gives review 
         //Update mapping for this seller review to the buyer 
@@ -249,8 +295,6 @@ contract Marketplace {
         buyerRewardAmounts[msg.sender] = 0;
         return true;
     }
-
-
 
 }
 
