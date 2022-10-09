@@ -9,18 +9,22 @@
     "test": "hardhat coverage",
     "deploy:local": "hardhat run --network localhost scripts/deployMarketplace.js",
     "local-testnet": "hardhat node"
-
   },
   "keywords": [],
   "author": "Bob Lin",
   "license": "ISC",
   "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^1.0.3",
     "@nomiclabs/hardhat-ethers": "^2.1.1",
-    "@nomiclabs/hardhat-waffle": "^2.0.3",
+    "@nomiclabs/hardhat-etherscan": "^3.1.0",
     "chai": "^4.3.6",
-    "ethereum-waffle": "^3.4.4",
-    "ethers": "^5.7.0",
-    "hardhat": "^2.11.1",
+    "ethers": "^5.7.1",
+    "hardhat": "^2.11.2",
     "solidity-coverage": "^0.8.1"
+  },
+  "dependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^2.0.0",
+    "alchemy-sdk": "^2.1.0",
+    "dotenv": "^16.0.3"
   }
 }

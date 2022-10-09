@@ -23,13 +23,103 @@ Things to add:
 pragma solidity >=0.7.0 <0.9.0;
 
 contract Marketplace {
-    // Variables
-    address public immutable sellerAddress; 
-    string public sellerName; 
-    uint256 public sellerSalesCount; 
-    uint256 public rewardAmount;     
 
-    // Events 
+    // ------------------------------------------------- Variables -------------------------------------------------
+    uint256 public countOfSellers;     
+
+    // ------------------------------------------------- Constructor -------------------------------------------------
+    // initialising the marketplace
+    constructor() {
+        countOfSellers = 0; 
+    }
+
+    // ------------------------------------------------- Structs -------------------------------------------------
+    struct Seller {
+        // Attributes
+        address sellerAddress;
+        uint256 sellerID;
+        uint256 sellerRepScore;
+        uint256 rewardAmount;
+        uint256 sellerRevenue;
+        bool valid;
+
+        // Mappings and arrays
+        Product[] sellerProducts;
+
+    }
+
+    struct Buyer {
+        // Attributes
+        address buyerAddress;
+        uint256 buyerRepScore;
+        uint256 buyerRewardAmount;
+        bool valid;
+
+    }
+
+    struct Product { 
+        // Attributes
+        uint256 productID;
+        string productName;
+        address sellerAddress; 
+        uint256 price; 
+        bool valid;
+        uint256 countReviews;
+
+        // Mappings and arrays
+        mapping(address => bool) buyers; 
+        mapping(address => Review) buyerReviews; 
+    } 
+
+    // Product[] public allProducts;
+    // mapping()
+
+    
+    // struct Reviews {
+    //     mapping()
+    // }
+
+    struct Review {
+        // Attributes
+        uint256 reviewID;
+        uint256 productID;
+        address sellerAddress;
+        address buyerAddress;
+        //string reviewText;
+        uint256 rating;
+        bool valid;
+    }
+
+    struct Sale {
+        // Attributes
+        address saleAddress;
+        address productID;
+        address sellerAddress;
+        address buyerAddress;
+        uint256 price;
+        uint256 timestamp;
+        bool valid;
+    }
+
+    // ------------------------------------------------- Mappings -------------------------------------------------
+    mapping(address => Seller) public allSellers;
+    mapping(address => Buyer) allBuyers;
+
+    // Tracks seller's number of sales
+    mapping(address => uint256) public numOfSales;
+
+    // // Mapping productID to Product 
+    // mapping(address => Product) allProducts; 
+
+
+
+    // ------------------------------------------------- Arrays -------------------------------------------------
+    // Unused so far... review!
+    Review[] public allReviews;
+    Sale[] public allSales;
+    Seller[] public allSellersArr;
+
+    // ------------------------------------------------- Events -------------------------------------------------
     event Upload( 
         uint256 productID,
         string productName, 
@@ -55,112 +145,82 @@ contract Marketplace {
         uint256 rating,
         uint256 timestamp
     );
-    event Transfer( 
-
+    event CreateSeller( 
+        address sellerAddress, 
+        uint256 sellerID,
+        uint256 sellerRepScore,
+        uint256 rewardAmount
+    ); 
+    event CreateBuyer( 
+        address buyerAddress, 
+        uint256 buyerRepScore
     ); 
 
-    
-    // Structs
-    // Define struct for Product (contains product info) 
-    struct Product { 
-        // Defining variables 
-        // address productID; 
-        uint256 productID;
-        string productName;
-        address sellerAddress; 
-        uint256 price; 
-        bool valid;
-        uint256 countReviews;
-        // Mappings 
-        // Buyer address => bool
-        mapping(address => bool) buyers; 
-        // Buyer address => reviewID
-        mapping(address => Review) buyerReviews; 
-        // Product[] products; // NEW TODO
-        // mapping(address => Review) reviews;
-    } 
 
-    Product[] public allProducts;
-    // mapping()
+    // ------------------------------------------------- Functions -------------------------------------------------
+    // Create seller - called by seller
+    function createSeller(uint256 sellerID, uint256 sellerRepScore, uint256 rewardAmount, uint256 sellerRevenue) 
+    public 
+    returns (bool success)
+    {
+        // Check for duplicates
+        require(!allSellers[msg.sender].valid, "Seller with this sellerAddress already exists!");
 
-    
-    // struct Reviews {
-    //     mapping()
-    // }
+        allSellers[msg.sender];
+        Seller storage newSeller = allSellers[msg.sender];
 
+        newSeller.sellerAddress = msg.sender;
+        newSeller.sellerID = sellerID;
+        newSeller.sellerRepScore = sellerRepScore;
+        newSeller.rewardAmount = rewardAmount;
+        newSeller.sellerRevenue = sellerRevenue;
 
-    // Define struct for Reviews 
-    struct Review {
-        // Defining variables
-        uint256 reviewID;
-        uint256 productID;
-        address sellerAddress;
-        address buyerAddress;
-        //string reviewText;
-        uint256 rating;
-        bool valid;
+        // NEW
+        uint256 idx = allSellersArr.length;
+        allSellersArr.push();
+        newSeller = allSellersArr[idx];
+        countOfSellers++;
+        //NEW
+
+        emit CreateSeller(msg.sender, sellerID, sellerRepScore, rewardAmount);
+        return true;
+    }
+
+    // Create buyer - called by buyer
+    function createBuyer(uint256 buyerRepScore) 
+    public 
+    returns (bool success)
+    {
+        // Check for duplicates
+        require(!allBuyers[msg.sender].valid, "Buyer with this buyerAddress already exists!");
+
+        allBuyers[msg.sender];
+        Buyer storage newBuyer = allBuyers[msg.sender];
+
+        newBuyer.buyerAddress = msg.sender;
+        newBuyer.buyerRepScore = buyerRepScore;
+
+        emit CreateBuyer(msg.sender, buyerRepScore);
+        return true;
     }
 
 
-    // Define struct for Sale 
-    struct Sale {
-        // Defining variables
-        address saleAddress;
-        address productID;
-        address sellerAddress;
-        address buyerAddress;
-        uint256 price;
-        uint256 timestamp;
-        bool valid;
-    }
-
-    // Mappings
-    // Tracks seller's number of sales
-    mapping(address => uint256) public numOfSales;
-
-    // // Mapping productID to Product 
-    // mapping(address => Product) allProducts; 
-
-    // Mapping sellerAddress to the amount of ETH they are able to withdraw
-    mapping(address => uint256) sellerRevenue;
-
-    // Mapping buyerAddress to the amount of ETH they are entitled to due to rewards
-    mapping(address => uint256) buyerRewardAmounts;
-
-    // Arrays
-    // Product[] public allProducts; 
-    // Unused so far... review!
-    Review[] public allReviews;
-    Sale[] public allSales;
-
-
-    // Constructor 
-    // initialising the marketplace
-    constructor(string memory _sellerName, uint256 _sellerSalesCount, uint256 _rewardAmount) {
-        sellerAddress = msg.sender; 
-        sellerName = _sellerName;
-        sellerSalesCount = _sellerSalesCount; 
-        rewardAmount = _rewardAmount;
-    }
-
-    // Functions
     // Upload Product - called by seller
     function uploadProduct(uint256 productID, string memory productName, uint256 price) 
     public 
     returns (bool success) 
     {
         // Verify whether the product information has been uploaded or not. (Pass if productID not valid)
-        require(!allProducts[productID].valid, "Product with this productID already uploaded before!"); 
-
+        require(!allSellers[msg.sender].sellerProducts[productID].valid, "Product with this productID already uploaded before!"); 
+// TODO
         // Initialize product instance 
         // cur numProducts will also be the productID of the next newProduct (zero indexed)
-        uint256 numProducts = allProducts.length;
+        uint256 numProducts = allSellers[msg.sender].sellerProducts.length;
         // adds one ele to array allProducts
-        allProducts.push(); 
+        allSellers[msg.sender].sellerProducts.push(); 
         // Create a newProduct in storage, note that numProducts is the new productID
         // This way of initialisation is necessary to avoid (nested) mapping error in Solidity
-        Product storage newProduct = allProducts[numProducts];
-        // Product storage newProduct = allProducts[productID];
+        Product storage newProduct = allSellers[msg.sender].sellerProducts[numProducts];
 
         // numProducts++;
         newProduct.productID = numProducts; 
@@ -178,26 +238,26 @@ contract Marketplace {
     }
 
     // Purchase of product - called by buyer 
-    function purchaseProduct(uint256 productID) 
+    function purchaseProduct(uint256 productID, address sellerAddress) 
     public 
     payable 
     returns (bool success) 
     { 
         // Verify whether product is in the system 
-        require(allProducts[productID].valid, "Product does not exist!"); 
+        require(allSellers[sellerAddress].sellerProducts[productID].valid, "Product does not exist!"); 
 
         // Check if buyer's balance is not 0 (the value provided in this function call msg)
         require(msg.value > 0, "Ethers cannot be zero!"); 
 
         // Identify product instance 
-        Product storage productToBuy = allProducts[productID]; 
+        Product storage productToBuy = allSellers[sellerAddress].sellerProducts[productID]; 
 
         // Checks if buyer's payment is equal to product price
         require(msg.value == productToBuy.price, "Please send exact amount!"); 
 
         // Perform the sale 
         // Give seller the credits 
-        sellerRevenue[productToBuy.sellerAddress] += msg.value;
+        allSellers[sellerAddress].sellerRevenue += msg.value;
         // Update allSales
         // allSales
 
@@ -210,15 +270,15 @@ contract Marketplace {
     }
     
     // Review of product - called by buyer
-    function buyerReview(uint256 buyerRating, uint256 productID) 
+    function buyerReview(uint256 buyerRating, uint256 productID, address sellerAddress) 
     public 
     returns (bool success) 
     { 
         // Verify whether product is in the system 
-        require(allProducts[productID].valid, "Product does not exist!");  
+        require(allSellers[sellerAddress].sellerProducts[productID].valid, "Product does not exist!");  
 
         // Identify product instance 
-        Product storage productToReview = allProducts[productID]; 
+        Product storage productToReview = allSellers[sellerAddress].sellerProducts[productID]; 
 
         // Check if buyer actually bought the product 
         require(productToReview.buyers[msg.sender] == true, "No records of buyer buying this product or leaving review."); 
@@ -244,10 +304,10 @@ contract Marketplace {
     returns (bool success) 
     { 
         // Verify whether product is in the system 
-        require(allProducts[productID].valid, "Product does not exist!"); 
+        require(allSellers[msg.sender].sellerProducts[productID].valid, "Product does not exist!"); 
 
         // Identify product instance 
-        Product storage product = allProducts[productID]; 
+        Product storage product = allSellers[msg.sender].sellerProducts[productID]; 
 
         // Identify product instance via its product ID, via its IPFS address p = allProducts[productID] 
         // Check if buyer has actually bought the product 
@@ -261,13 +321,13 @@ contract Marketplace {
         //Update mapping for this seller review to the buyer 
 
         // Ensure seller has sent the correct amount
-        require(msg.value == rewardAmount, "Please send exact amount of reward!");
+        require(msg.value == allSellers[msg.sender].rewardAmount, "Please send exact amount of reward!");
 
         // Reward buyer 
-        buyerRewardAmounts[buyerAddress] += rewardAmount;
+        allBuyers[buyerAddress].buyerRewardAmount += allSellers[msg.sender].rewardAmount;
 
         // Publish Reward event to UI 
-        emit Reward(buyerAddress, msg.sender, reviewID, rewardAmount, block.timestamp);
+        emit Reward(buyerAddress, msg.sender, reviewID, allSellers[msg.sender].rewardAmount, block.timestamp);
         return true; 
     }
 
@@ -278,22 +338,30 @@ contract Marketplace {
     payable
     returns (bool sucess)
     {
-        uint256 amountToWithdraw = sellerRevenue[msg.sender];
+        uint256 amountToWithdraw = allSellers[msg.sender].sellerRevenue;
         payable(msg.sender).transfer(amountToWithdraw);
-        sellerRevenue[msg.sender] = 0;
+        allSellers[msg.sender].sellerRevenue = 0;
         return true;
     }
 
-    // Buyers withdraw amount they are entitled to
+    // Buyers withdraw amount they are entitled to - called by buyer
     function buyerWithdraw()
     public
     payable
     returns (bool sucess)
     {
-        uint256 amountToWithdraw = buyerRewardAmounts[msg.sender];
+        uint256 amountToWithdraw = allBuyers[msg.sender].buyerRewardAmount;
         payable(msg.sender).transfer(amountToWithdraw);
-        buyerRewardAmounts[msg.sender] = 0;
+        allBuyers[msg.sender].buyerRewardAmount = 0;
         return true;
+    }
+
+    // Getter functions to interact and test the contract on Goerli testnet
+    function getSellers()
+    public
+    returns (uint256)
+    {
+        return allSellersArr[0].sellerID;
     }
 
 }
