@@ -1,5 +1,6 @@
-/**
+/*
 Created by Bob Lin
+SPDX-License-Identifier: MIT
 
 Blockchain Reputation Management System in E-commerce 
 -- 6 sections of code:
@@ -10,391 +11,452 @@ Blockchain Reputation Management System in E-commerce
 5. Buyer reviews
 6. Rewards
 
-This marketplace currently is set up for only 1 seller store with multiple products, and multiple possible buyers.
-Things to add:
-- Reputation score storage
-- Reputation score calculations and updates
-
 */
 
-
-// SPDX-License-Identifier: MIT
-
-pragma solidity >=0.7.0 <0.9.0;
+pragma solidity >= 0.7.0 < 0.9.0;
 
 contract Marketplace {
-
     // ------------------------------------------------- Variables -------------------------------------------------
-    uint256 public countOfSellers;     
+    uint public countOfSellers = 0;     
+    uint public countOfBuyers = 0;
+    uint public countOfProducts = 0;     
 
-    // ------------------------------------------------- Constructor -------------------------------------------------
-    // initialising the marketplace
-    constructor() {
-        countOfSellers = 0; 
-    }
+    // CONSTANTS
+    uint PADDING = 100;    // This allows us to do 2dp calculations (convert percentages to basis points)
 
-    // ------------------------------------------------- Structs -------------------------------------------------
+    // Note that all percentages in this program are represented as basis points (+ve uint)
+    uint FORGET = 86; 
+    uint TOLERANCE = 98;    
+    uint NMAX = 20;
+    uint NMIN = 0;
+
+    uint VERIFIEDSCORE = 50;    // Verified accounts will receive this score straightaway (future works)
+    
+    // ----- Structs ------
     struct Seller {
-        // Attributes
         address sellerAddress;
-        uint256 sellerID;
-        uint256 sellerRepScore;
-        uint256 rewardAmount;
-        uint256 sellerRevenue;
+        string name;
+        uint sellerID;
+        uint sellerRepScore;
+        uint rewardPercentage; // bp
+        uint sellerRevenue;
         bool valid;
-
-        // Mappings and arrays
-        Product[] sellerProducts;
-
+        bool verified;
     }
 
     struct Buyer {
-        // Attributes
         address buyerAddress;
-        uint256 buyerRepScore;
-        uint256 buyerRewardAmount;
+        uint buyerID;
+        uint buyerRepScore;
+        uint buyerRewardAmount;
         bool valid;
-
+        bool verified;
+        uint numOfReviewsGiven;
+        uint countOfRepScores;
     }
 
     struct Product { 
-        // Attributes
-        uint256 productID;
+        uint productID;
         string productName;
         address sellerAddress; 
-        uint256 price; 
+        uint price; // in wei
         bool valid;
-        uint256 countReviews;
-
-        // Mappings and arrays
-        mapping(address => bool) buyers; 
-        mapping(address => Review) buyerReviews; 
+        uint countReviews;
+        uint latestReviewTimestamp;
+        uint rating;
+        bool reviewed;
     } 
 
-    // Product[] public allProducts;
-    // mapping()
-
-    
-    // struct Reviews {
-    //     mapping()
-    // }
-
-    struct Review {
-        // Attributes
-        uint256 reviewID;
-        uint256 productID;
-        address sellerAddress;
-        address buyerAddress;
-        //string reviewText;
-        uint256 rating;
-        bool valid;
-    }
-
-    struct Sale {
-        // Attributes
-        address saleAddress;
-        address productID;
-        address sellerAddress;
-        address buyerAddress;
-        uint256 price;
-        uint256 timestamp;
-        bool valid;
-    }
-
-    // ------------------------------------------------- Mappings -------------------------------------------------
+    // ----- Mappings -----
+    // Maps user address to Seller or Buyer account struct
     mapping(address => Seller) public allSellers;
-    mapping(address => Buyer) allBuyers;
+    mapping(address => Buyer) public allBuyers;
 
     // Tracks seller's number of sales
-    mapping(address => uint256) public numOfSales;
+    mapping(address => uint) public numOfSales;
 
-    // // Mapping productID to Product 
-    // mapping(address => Product) allProducts; 
+    // Mapping sellerAddress to array of Products
+    mapping(address => Product[]) public productsOfSeller; 
 
-
-
-    // ------------------------------------------------- Arrays -------------------------------------------------
-    // Unused so far... review!
-    Review[] public allReviews;
-    Sale[] public allSales;
-    Seller[] public allSellersArr;
+    // Mapping buyerAddress to array of Products that they bought
+    mapping(address => Product[]) public purchasedProductsOfBuyer;
+    
 
     // ------------------------------------------------- Events -------------------------------------------------
     event Upload( 
-        uint256 productID,
+        uint productID,
         string productName, 
-        address indexed sellerAddress
+        address sellerAddress
     ); 
     event ProductSale( 
-        address indexed buyerAddress, 
-        address indexed sellerAddress, 
-        uint256 price, 
-        uint256 timestamp 
+        address buyerAddress, 
+        address sellerAddress, 
+        string productName,
+        uint productID,
+        uint price, // in wei
+        uint timestamp,
+        uint buyerProductIdx
     ); 
     event Reward( 
-        address indexed buyerAddress, 
-        address indexed sellerAddress, 
-        uint256 reviewID, 
-        uint256 price,
-        uint256 timestamp
+        address buyerAddress, 
+        address sellerAddress, 
+        uint price, // in wei
+        uint timestamp
     ); 
     event BuyerReview(
-        uint256 productID,
-        uint256 reviewID,
-        address indexed buyerAddress,
-        uint256 rating,
-        uint256 timestamp
+        uint productID,
+        address sellerAddress,
+        address buyerAddress,
+        uint rating,
+        uint timestamp,
+        uint newRating, 
+        uint newCountOfReviews
     );
     event CreateSeller( 
         address sellerAddress, 
-        uint256 sellerID,
-        uint256 sellerRepScore,
-        uint256 rewardAmount
+        string name,
+        uint sellerID,
+        uint rewardPercentage
     ); 
     event CreateBuyer( 
         address buyerAddress, 
-        uint256 buyerRepScore
-    ); 
+        uint buyerID,
+        uint buyerRepScore
+    );
+    event Verified(
+        address userAddress
+    );
 
 
     // ------------------------------------------------- Functions -------------------------------------------------
-    // Create seller - called by seller
-    function createSeller(uint256 sellerID, uint256 sellerRepScore, uint256 rewardAmount, uint256 sellerRevenue) 
+
+    function createSeller(string memory sellerName, uint rewardPercentage) 
     public 
-    returns (bool success)
+    /*
+        Creates a new seller - called by seller 
+    */
     {
         // Check for duplicates
         require(!allSellers[msg.sender].valid, "Seller with this sellerAddress already exists!");
 
-        allSellers[msg.sender];
+        // Update mapping and creation of new Seller struct
         Seller storage newSeller = allSellers[msg.sender];
-
         newSeller.sellerAddress = msg.sender;
-        newSeller.sellerID = sellerID;
-        newSeller.sellerRepScore = sellerRepScore;
-        newSeller.rewardAmount = rewardAmount;
-        newSeller.sellerRevenue = sellerRevenue;
+        newSeller.name = sellerName;
+        newSeller.sellerID = countOfSellers;
+        newSeller.rewardPercentage = rewardPercentage;
+        newSeller.sellerRevenue = 0;
+        newSeller.valid = true;
 
-        // NEW
-        uint256 idx = allSellersArr.length;
-        allSellersArr.push();
-        newSeller = allSellersArr[idx];
+        allSellers[msg.sender] = newSeller;
         countOfSellers++;
-        //NEW
 
-        emit CreateSeller(msg.sender, sellerID, sellerRepScore, rewardAmount);
-        return true;
+        emit CreateSeller(msg.sender, sellerName, countOfSellers, rewardPercentage);
     }
 
-    // Create buyer - called by buyer
-    function createBuyer(uint256 buyerRepScore) 
+    function createBuyer(uint buyerRepScore) 
     public 
-    returns (bool success)
+    /*
+        Creates a buyer - called by buyer
+        Technically all new buyers should start with rep score = 1
+    */
     {
         // Check for duplicates
         require(!allBuyers[msg.sender].valid, "Buyer with this buyerAddress already exists!");
 
-        allBuyers[msg.sender];
+        // Update mapping
         Buyer storage newBuyer = allBuyers[msg.sender];
-
         newBuyer.buyerAddress = msg.sender;
+        newBuyer.buyerID = countOfBuyers;
         newBuyer.buyerRepScore = buyerRepScore;
+        newBuyer.valid = true;
+        newBuyer.numOfReviewsGiven = 1; // N - starts at 1 because buyer will give review, if buyer doesn't, variable not used
+        newBuyer.countOfRepScores = 1;  // n
 
-        emit CreateBuyer(msg.sender, buyerRepScore);
-        return true;
+        allBuyers[msg.sender] = newBuyer;
+        countOfBuyers++;
+
+        emit CreateBuyer(msg.sender, countOfBuyers, buyerRepScore);
     }
 
-
-    // Upload Product - called by seller
-    function uploadProduct(uint256 productID, string memory productName, uint256 price) 
+    function uploadProduct(string memory productName, uint price) 
     public 
-    returns (bool success) 
+    /*
+        Called by existing seller to create and upload a new product
+    */
     {
         // Verify whether the product information has been uploaded or not. (Pass if productID not valid)
-        require(!allSellers[msg.sender].sellerProducts[productID].valid, "Product with this productID already uploaded before!"); 
-// TODO
-        // Initialize product instance 
-        // cur numProducts will also be the productID of the next newProduct (zero indexed)
-        uint256 numProducts = allSellers[msg.sender].sellerProducts.length;
-        // adds one ele to array allProducts
-        allSellers[msg.sender].sellerProducts.push(); 
-        // Create a newProduct in storage, note that numProducts is the new productID
-        // This way of initialisation is necessary to avoid (nested) mapping error in Solidity
-        Product storage newProduct = allSellers[msg.sender].sellerProducts[numProducts];
+        require(allSellers[msg.sender].valid, "This function is not called by a valid seller address!"); 
 
-        // numProducts++;
-        newProduct.productID = numProducts; 
+        // Get array of this seller's current products
+        Product[] storage curSellerProducts = productsOfSeller[msg.sender];
+
+        // Create a new slot in array for the next product
+        uint productID = curSellerProducts.length;
+        curSellerProducts.push();
+
+        // Create Product struct (new product)
+        Product storage newProduct = curSellerProducts[productID];
+        newProduct.productID = productID; 
         newProduct.productName = productName;
         newProduct.sellerAddress = msg.sender;
-        newProduct.price = price;
+        newProduct.price = price; // in wei
         newProduct.valid = true;
-        newProduct.countReviews = 0;
+        newProduct.countReviews = 1; // n
+        newProduct.rating = 1;  
+        newProduct.reviewed = false;
+        
+        curSellerProducts[productID] = newProduct;
+        countOfProducts++;
 
-        // Mappings (None during initialisation)
+        // Update mapping productsOfSeller
+        productsOfSeller[msg.sender] = curSellerProducts;
 
         // If success, publish to UI 
-        emit Upload(numProducts, productName, msg.sender);
-        return true;
+        emit Upload(productID, productName, msg.sender);
     }
 
-    // Purchase of product - called by buyer 
-    function purchaseProduct(uint256 productID, address sellerAddress) 
+    function purchaseProduct(uint productID, address payable sellerAddress) 
     public 
     payable 
-    returns (bool success) 
+    /*
+        Called by existing buyer to purchase an existing product sold by a seller
+        Involves payment from buyer to seller
+    */
     { 
+        // Verify whether the caller is a buyer
+        require(allBuyers[msg.sender].valid, "This function is not called by a valid buyer address!"); 
+
         // Verify whether product is in the system 
-        require(allSellers[sellerAddress].sellerProducts[productID].valid, "Product does not exist!"); 
+        require(productsOfSeller[sellerAddress][productID].valid, "Product does not exist!"); 
 
         // Check if buyer's balance is not 0 (the value provided in this function call msg)
         require(msg.value > 0, "Ethers cannot be zero!"); 
 
         // Identify product instance 
-        Product storage productToBuy = allSellers[sellerAddress].sellerProducts[productID]; 
+        Product storage productToBuy = productsOfSeller[sellerAddress][productID]; // TODO memoery or storage?
 
         // Checks if buyer's payment is equal to product price
-        require(msg.value == productToBuy.price, "Please send exact amount!"); 
+        require(msg.value  == productToBuy.price, "Please send exact amount!");  // in wei
 
         // Perform the sale 
-        // Give seller the credits 
-        allSellers[sellerAddress].sellerRevenue += msg.value;
-        // Update allSales
-        // allSales
+        // Transfer eth to seller
+        (bool sent, ) = sellerAddress.call{value: msg.value}("");
+        require(sent, "Failed to send Ether");
 
-        // Update mapping 
-        productToBuy.buyers[msg.sender] = true; // mapping buyer address to true or false depending on whether the buyer has bought this product before
+        // Update curBuyerProducts array
+        Product[] storage curBuyerProducts = purchasedProductsOfBuyer[msg.sender];
+        uint buyerProductIdx = curBuyerProducts.length;
+        curBuyerProducts.push();
+        curBuyerProducts[buyerProductIdx] = productToBuy;
+
+        // Update numOfSales
+        numOfSales[sellerAddress]++;
 
         // Publish Purchase event to UI 
-        emit ProductSale(msg.sender, sellerAddress, productToBuy.price, block.timestamp); 
-        return true; 
+        emit ProductSale(msg.sender, sellerAddress, productToBuy.productName, productToBuy.productID, productToBuy.price, block.timestamp, buyerProductIdx); 
     }
     
-    // Review of product - called by buyer
-    function buyerReview(uint256 buyerRating, uint256 productID, address sellerAddress) 
+    function buyerReview(uint buyerRating, uint productID, uint buyerProductIdx, address sellerAddress) 
     public 
-    returns (bool success) 
+    /*
+        Buyer review of the product - called by buyer
+        This is the second step of two steps, first being the buyer calling the calculateRepScore function
+    */
     { 
-        // Verify whether product is in the system 
-        require(allSellers[sellerAddress].sellerProducts[productID].valid, "Product does not exist!");  
+        // --- CHECKS ---
+        // Verify whether seller product is in the system ››
+        require(productsOfSeller[sellerAddress][productID].valid, "Product does not exist!");  
 
-        // Identify product instance 
-        Product storage productToReview = allSellers[sellerAddress].sellerProducts[productID]; 
+        // Check if buyer has purchased this product before 
+        require(
+            purchasedProductsOfBuyer[msg.sender][buyerProductIdx].sellerAddress == sellerAddress &&
+            purchasedProductsOfBuyer[msg.sender][buyerProductIdx].productID == productID,
+            "This buyer's purchased product does not match with the seller's product to be reviewed."
+        ); 
 
-        // Check if buyer actually bought the product 
-        require(productToReview.buyers[msg.sender] == true, "No records of buyer buying this product or leaving review."); 
+        // Check if buyer has left a review on this product before
+        require(
+            purchasedProductsOfBuyer[msg.sender][buyerProductIdx].reviewed == false, 
+            "Buyer has already left a review on this product before."
+        );
 
-        // Create the Reviewww named productReview
-        productToReview.countReviews++;
-        uint256 reviewID = productToReview.countReviews;
-        Review memory productReview = Review(reviewID, productID, productToReview.sellerAddress, msg.sender, buyerRating, true);
+        // --- CALCULATIONS ---
+        uint newRepScore = calculateRepScore(buyerRating, productID, buyerProductIdx, sellerAddress);
 
-        // Update mappings 
-        productToReview.buyerReviews[msg.sender] = productReview;
+        // Calculate new product rating
+        uint oldRating = productsOfSeller[sellerAddress][productID].rating;
+        uint numOfRatings = productsOfSeller[sellerAddress][productID].countReviews;
+        uint newRating = ( (oldRating * numOfRatings) + (buyerRating * newRepScore / 100) ) * 100 / (numOfRatings*100 + newRepScore); //CANNOT DIVIDE BY 100
+        
+        // --- UPDATE STATES --- 
+        /* DEVELOPER'S NOTE:
+        Notice how seller's product only gets rating and countReviews updated, 
+        whereas buyer's product only gets reviewed and latestReviewTimestamp updated.
 
+        This is because seller's product is 'on display', it has never been/will never be reviewed,
+        it only updates the newest rating.
+
+        The buyer's product should reflect whether the buyer has reviewed it, to prevent double reviews.
+        Timestamp is needed to calculate rep score for this buyer. 
+        The rating of the buyer's product will stay the same and reflect the rating at which the buyer bought it.
+        */
+
+        // Update seller's product's information
+        productsOfSeller[sellerAddress][productID].rating = newRating;
+        productsOfSeller[sellerAddress][productID].countReviews++;
+
+        // Update buyer's product information
+        purchasedProductsOfBuyer[msg.sender][buyerProductIdx].reviewed = true;
+        purchasedProductsOfBuyer[msg.sender][buyerProductIdx].latestReviewTimestamp = block.timestamp;
+        
+        // Update buyer rep score and increment counters
+        allBuyers[msg.sender].buyerRepScore = newRepScore; 
+        allBuyers[msg.sender].countOfRepScores++;
+        allBuyers[msg.sender].numOfReviewsGiven++;
+
+        // Note that cannot directly call reward() function here because internal function cannot be payable
+    
         // Publish Review event to UI 
-        emit BuyerReview(productID, reviewID, msg.sender, buyerRating, block.timestamp);
-        return true;
+        emit BuyerReview(productID, sellerAddress, msg.sender, buyerRating, block.timestamp, productsOfSeller[sellerAddress][productID].rating, productsOfSeller[sellerAddress][productID].countReviews);
+    }
 
+    function calculateRepScore(uint buyerRating, uint productID, uint buyerProductIdx, address sellerAddress)
+    private
+    view
+    returns (uint)
+    /*
+        Called by buyerReview() function internally to return calculate updated rep score
+        It is a view function, meaning no states are modified in this function - 
+        merely viewing and calculating values without updates
+    */
+    {
+        // Identify buyer and rep scores
+        Buyer storage buyer = allBuyers[msg.sender];
+        uint oldRepScore = buyer.buyerRepScore;
+        uint countOfRepScores = buyer.countOfRepScores;
+
+        // 1. frequency factor 
+        // Use buyer's latest timestamp
+        uint timePrev = purchasedProductsOfBuyer[msg.sender][buyerProductIdx].latestReviewTimestamp;    
+        uint timeNow = block.timestamp;
+        uint deltaHours = (timeNow - timePrev)/3600;
+        uint frequencyFactor;
+
+        if (deltaHours > 38) {
+            frequencyFactor = 100;
+        }
+        else {
+            // Anything more than 38 hours will cause error
+            frequencyFactor = ((PADDING ** deltaHours) / (FORGET ** deltaHours));   // to int (bp)
+        }
+
+        // 2. deviation factor
+        // need this workaround since no support for negative numbers for unsigned int
+        uint deltaRating;
+        uint oldRating = productsOfSeller[sellerAddress][productID].rating;
+        if (oldRating > buyerRating) {
+            deltaRating = oldRating - buyerRating;
+        }
+        else {
+            deltaRating = buyerRating - oldRating;
+        }
+
+        // Note that deltaRating can max be 38, any bigger than 38 MIGHT be larger than max support of Solidity uint256
+        if (deltaRating > 38) {
+            deltaRating = 38;
+        }
+        uint deviationFactor = ( (TOLERANCE ** deltaRating)*100 ) / (PADDING ** deltaRating);// to integer (bp)
+
+        // 3. active factor
+        uint N = allBuyers[msg.sender].numOfReviewsGiven;
+        uint activeFactor = ((N - NMIN)*100) /(NMAX - NMIN);       // int (bp)
+        // activeFactor is minimum of the result above, or 100
+        if (activeFactor > 100) {
+            activeFactor = 100;
+        }
+
+        // Calc incomingRepScore - the next instance of RS score to include in aggregation
+        uint incomingRepScore = frequencyFactor * deviationFactor * activeFactor /10000;    //int (bp)
+        if (incomingRepScore > 150) {
+            incomingRepScore = 150;
+        }
+        else if (incomingRepScore < 1) {
+            incomingRepScore = 0;
+        }
+
+        // Calc newRepScore (aggregated w past rep scores)
+        uint newRepScore = (incomingRepScore + (oldRepScore * countOfRepScores)) / (countOfRepScores+1);  // rounded by Solidity
+        // Conditional clause such that rep scores are not stagnant due to rounding issues - should be refactored in future works
+        if (newRepScore == oldRepScore) {
+            if (incomingRepScore > oldRepScore) {
+                newRepScore++;
+            }
+            else if (incomingRepScore < oldRepScore) {
+                newRepScore--;
+            }
+        }
+
+        // Sanity checks on limits
+        if (newRepScore < 0) {
+            newRepScore = 0;
+        }
+        else if (newRepScore > 100) {
+            newRepScore = 100;
+        }
+
+        return newRepScore;
     }
 
     // Seller rewards buyers for leaving review - called by seller
-    function reward(uint256 productID, address buyerAddress, uint256 reviewID) 
+    function reward(address sellerAddress, uint productID, address buyerAddress, uint buyerProductIdx) 
     public 
     payable 
-    returns (bool success) 
     { 
-        // Verify whether product is in the system 
-        require(allSellers[msg.sender].sellerProducts[productID].valid, "Product does not exist!"); 
+        // CHECKS
+        require(productsOfSeller[sellerAddress][productID].valid, "Product does not exist!"); 
+        require(purchasedProductsOfBuyer[buyerAddress][buyerProductIdx].valid, "No records of buyer buying this product."); 
+        require(purchasedProductsOfBuyer[buyerAddress][buyerProductIdx].reviewed, "No records of buyer leaving review."); 
 
-        // Identify product instance 
-        Product storage product = allSellers[msg.sender].sellerProducts[productID]; 
+        // Calculate how much to reward (in wei)
+        uint finalReward = allSellers[sellerAddress].rewardPercentage * productsOfSeller[sellerAddress][productID].price * allBuyers[buyerAddress].buyerRepScore / 10000; // div by 100 twice (one for rewardPercentage, one for buyerRepScore)
 
-        // Identify product instance via its product ID, via its IPFS address p = allProducts[productID] 
-        // Check if buyer has actually bought the product 
-        require(product.buyers[buyerAddress] == true, "No records of buyer buying this product."); 
+        // Check if msg.value is enough to pay Buyer (in wei)
+        require(msg.value >= finalReward, "msg.value not enough to pay reward."); 
+        
+        // Transfer reward amount to buyer 
+        (bool sentBuyer, ) = buyerAddress.call{value: finalReward}("");
+        require(sentBuyer, "Failed to send Ether to Buyer");
 
-        // TODO START FROM HERE!
-        // Check if buyer left a review 
-        require(product.buyerReviews[buyerAddress].valid, "No records of buyer leaving review."); 
-
-        // Future TODO - Seller gives review 
-        //Update mapping for this seller review to the buyer 
-
-        // Ensure seller has sent the correct amount
-        require(msg.value == allSellers[msg.sender].rewardAmount, "Please send exact amount of reward!");
-
-        // Reward buyer 
-        allBuyers[buyerAddress].buyerRewardAmount += allSellers[msg.sender].rewardAmount;
+        // Change return to seller
+        uint remainingValue = msg.value - finalReward;
+        (bool sentSeller, ) = sellerAddress.call{value: remainingValue}("");
+        require(sentSeller, "Failed to send remaining Ether to Seller");
 
         // Publish Reward event to UI 
-        emit Reward(buyerAddress, msg.sender, reviewID, allSellers[msg.sender].rewardAmount, block.timestamp);
-        return true; 
+        emit Reward(buyerAddress, msg.sender, finalReward, block.timestamp);
     }
 
-    // Payable functions - called by seller
-    // Sellers withdraw amount they are entitled to
-    function sellerWithdraw()
+    function verifyID()
     public
-    payable
-    returns (bool sucess)
-    {
-        uint256 amountToWithdraw = allSellers[msg.sender].sellerRevenue;
-        payable(msg.sender).transfer(amountToWithdraw);
-        allSellers[msg.sender].sellerRevenue = 0;
-        return true;
-    }
+    /*
+        (Currently not in any use case, designed for future works)
+        Verifies a buyer account, which increases rep score to VERIFIEDSCORE, if current score is lower
+    */
+    {   
+        // Checks
+        require(allBuyers[msg.sender].valid == true, "Address is not a buyer");
+        require(allBuyers[msg.sender].verified == false, "This account is already verified.");
 
-    // Buyers withdraw amount they are entitled to - called by buyer
-    function buyerWithdraw()
-    public
-    payable
-    returns (bool sucess)
-    {
-        uint256 amountToWithdraw = allBuyers[msg.sender].buyerRewardAmount;
-        payable(msg.sender).transfer(amountToWithdraw);
-        allBuyers[msg.sender].buyerRewardAmount = 0;
-        return true;
-    }
+        allBuyers[msg.sender].verified = true;
 
-    // Getter functions to interact and test the contract on Goerli testnet
-    function getSellers()
-    public
-    returns (uint256)
-    {
-        return allSellersArr[0].sellerID;
+        // Update rep score to VERIFIEDSCORE if current score is under VERIFIEDSCORE
+        if (allBuyers[msg.sender].buyerRepScore < VERIFIEDSCORE) {
+            allBuyers[msg.sender].buyerRepScore = VERIFIEDSCORE;
+        }
+        
+        emit Verified(msg.sender);
     }
 
 }
 
-
-// contract ERC20Basic{
-//     uint256 public constant tokenPrice = 5; // 1 token for 5 wei
-    
-//     function buy(uint256 _amount) external payable {
-//         // e.g. the buyer wants 100 tokens, needs to send 500 wei
-//         require(msg.value == _amount * tokenPrice, 'Need to send exact amount of wei');
-        
-//         /*
-//          * sends the requested amount of tokens
-//          * from this contract address
-//          * to the buyer
-//          */
-//         transfer(msg.sender, _amount);
-//     }
-    
-//     function sell(uint256 _amount) external {
-//         // decrement the token balance of the seller
-//         balances[msg.sender] -= _amount;
-//         increment the token balance of this contract
-//         balances[address(this)] += _amount;
-
-//         /*
-//          * don't forget to emit the transfer event
-//          * so that external apps can reflect the transfer
-//          */
-//         emit Transfer(msg.sender, address(this), _amount);
-        
-//         // e.g. the user is selling 100 tokens, send them 500 wei
-//         payable(msg.sender).transfer(amount * tokenPrice);
-//     }
-// }
